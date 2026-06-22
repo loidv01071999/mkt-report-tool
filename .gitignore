@@ -1,0 +1,16 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller build files
+build/
+dist/
+*.spec
+
+# Test output and data files (keep your CRM/FB data private)
+*.csv
+*.xlsx
+
+# Logs
+*.log

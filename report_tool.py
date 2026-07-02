@@ -19,6 +19,19 @@ def process_reports(bcfb_files, crm_file, output_dir):
                 except UnicodeDecodeError:
                     df = pd.read_csv(file, encoding='utf-16')
                 
+                # Hỗ trợ linh hoạt các cột Tên chiến dịch hoặc Tên nhóm quảng cáo
+                name_col = None
+                for possible_name in ["Tên chiến dịch", "Tên nhóm quảng cáo", "Tên quảng cáo"]:
+                    if possible_name in df.columns:
+                        name_col = possible_name
+                        break
+                
+                if not name_col:
+                    raise ValueError(f"File '{os.path.basename(file)}' thiếu cột Tên chiến dịch/Tên nhóm quảng cáo.")
+                
+                # Đổi tên cột về chuẩn chung để xử lý
+                df = df.rename(columns={name_col: "Tên chiến dịch"})
+                
                 cols = ["Tên chiến dịch", "Kết quả", "Số tiền đã chi tiêu (VND)"]
                 missing_cols = [c for c in cols if c not in df.columns]
                 if missing_cols:
@@ -37,6 +50,9 @@ def process_reports(bcfb_files, crm_file, output_dir):
         # Clean numeric columns
         bcfb_full['Kết quả'] = pd.to_numeric(bcfb_full['Kết quả'], errors='coerce').fillna(0)
         bcfb_full['Số tiền đã chi tiêu (VND)'] = pd.to_numeric(bcfb_full['Số tiền đã chi tiêu (VND)'], errors='coerce').fillna(0)
+        
+        # Lọc bỏ các record có Số tiền đã chi tiêu (VND) = 0
+        bcfb_full = bcfb_full[bcfb_full['Số tiền đã chi tiêu (VND)'] != 0]
         
         # Gom nhóm theo Tên chiến dịch
         bcfb_grouped = bcfb_full.groupby('Tên chiến dịch', as_index=False).agg({
@@ -60,27 +76,36 @@ def process_reports(bcfb_files, crm_file, output_dir):
             
         crm_df['Số contact'] = pd.to_numeric(crm_df['Số contact'], errors='coerce').fillna(0)
         
-        # 3. Mapping
-        output_rows = []
-        matched_campaigns = set()
-        
+        # 3. Mapping thông minh (Ưu tiên chuỗi Mã dài nhất nếu có nhiều Mã trùng lặp)
+        crm_codes = []
         for idx, row in crm_df.iterrows():
             ma = str(row['Mã']).strip()
+            crm_codes.append(ma)
+        crm_df['Mã'] = crm_codes
+        
+        aggregated_data = {ma: {'Kết quả': 0, 'Số tiền đã chi tiêu (VND)': 0} for ma in crm_codes}
+        unmatched_campaigns = []
+        
+        for _, camp_row in bcfb_grouped.iterrows():
+            camp_name = str(camp_row['Tên chiến dịch'])
+            
+            matches = [ma for ma in crm_codes if ma in camp_name]
+            
+            if matches:
+                # Chọn mã dài nhất để map (VD: PHYNV212YNC454L8i2 sẽ ưu tiên hơn PHYNV212YNC454L8)
+                best_match = max(matches, key=len)
+                aggregated_data[best_match]['Kết quả'] += camp_row['Kết quả']
+                aggregated_data[best_match]['Số tiền đã chi tiêu (VND)'] += camp_row['Số tiền đã chi tiêu (VND)']
+            else:
+                unmatched_campaigns.append(camp_row)
+                
+        output_rows = []
+        for idx, row in crm_df.iterrows():
+            ma = row['Mã']
             crm_contact = row['Số contact']
             
-            # Find matching campaigns in bcfb_grouped
-            matched_mask = bcfb_grouped['Tên chiến dịch'].str.contains(ma, regex=False, na=False)
-            matching_rows = bcfb_grouped[matched_mask]
-            
-            sum_ket_qua = 0
-            sum_so_tien = 0
-            
-            for _, m_row in matching_rows.iterrows():
-                camp_name = m_row['Tên chiến dịch']
-                if camp_name not in matched_campaigns:
-                    sum_ket_qua += m_row['Kết quả']
-                    sum_so_tien += m_row['Số tiền đã chi tiêu (VND)']
-                    matched_campaigns.add(camp_name)
+            sum_ket_qua = aggregated_data[ma]['Kết quả']
+            sum_so_tien = aggregated_data[ma]['Số tiền đã chi tiêu (VND)']
             
             max_contact = max(crm_contact, sum_ket_qua)
             
@@ -91,14 +116,11 @@ def process_reports(bcfb_files, crm_file, output_dir):
             })
             
         # 4. Các chiến dịch chưa được match trong BCFB
-        unmatched_mask = ~bcfb_grouped['Tên chiến dịch'].isin(matched_campaigns)
-        unmatched_rows = bcfb_grouped[unmatched_mask]
-        
-        for _, row in unmatched_rows.iterrows():
+        for camp_row in unmatched_campaigns:
             output_rows.append({
-                "Mã": row['Tên chiến dịch'],
-                "Số contact": row['Kết quả'],
-                "Số tiền đã chi tiêu (VND)": row['Số tiền đã chi tiêu (VND)']
+                "Mã": camp_row['Tên chiến dịch'],
+                "Số contact": camp_row['Kết quả'],
+                "Số tiền đã chi tiêu (VND)": camp_row['Số tiền đã chi tiêu (VND)']
             })
             
         # 5. Xuất Excel

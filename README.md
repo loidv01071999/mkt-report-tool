@@ -8,9 +8,11 @@ Phần mềm được thiết kế với giao diện đồ họa (GUI) đơn gi�
 
 ## ✨ Tính năng nổi bật
 - **Gộp dữ liệu thông minh**: Tự động nhận diện và gộp số liệu (Số tiền chi tiêu, Kết quả) của các chiến dịch Facebook có chung Mã CRM.
-- **Xử lý linh hoạt**: Lấy giá trị lớn nhất (MAX) giữa số contact từ CRM và kết quả thực tế từ Facebook.
-- **Bảo toàn dữ liệu**: Giữ nguyên thứ tự các mã CRM gốc; tự động đẩy các chiến dịch Facebook không thuộc CRM nào xuống cuối bảng để không bỏ sót bất kỳ chi phí nào.
-- **Đa nền tảng**: Hỗ trợ chạy mượt mà trên cả Windows, macOS và Linux.
+- **Phân tách Content Mới & Ads Cũ**: Hỗ trợ bộ lọc theo khoảng "Ngày tạo" của chiến dịch, tự động bóc tách các chiến dịch mới tinh (không chứa chữ "Bản sao" và chưa từng chạy trước đó) sang file `File_1_CONTENT_MOI`. Các mã còn lại được đưa vào `File_2_ADS_CU`.
+- **Tự động làm sạch mã CRM (Auto-Extraction)**: Cung cấp tính năng tuỳ chỉnh Tiền tố mã CRM (VD: `P, PH, K`). Nếu chiến dịch không khớp mã CRM có sẵn, Tool tự động sử dụng sức mạnh Regex để quét và cắt gọt tên chiến dịch dài ngoằng thành các mã CRM tinh gọn (tối thiểu 6 ký tự), loại bỏ toàn bộ thông tin thừa.
+- **Phát hiện Ngoại lệ (Anomaly Detection)**: Nếu phát hiện một mã CRM vừa có chiến dịch cũ, lại vừa có chiến dịch mới trong khoảng thời gian đang test, hệ thống sẽ tự động cách ly nó sang một sheet riêng biệt tên là `Ma Can Kiem Tra` để bạn dễ dàng rà soát lại lỗi từ đội chạy Ads.
+- **Tích hợp Link Content**: Có khả năng đọc thêm file Content tùy chọn để ghép link bài quảng cáo vào báo cáo cuối cùng.
+- **Chế độ Linh hoạt**: Bạn có quyền bỏ tick bộ lọc ngày để phần mềm hoạt động ở chế độ cơ bản (xuất gộp chung thành 1 file duy nhất như trước đây).
 
 ---
 
@@ -21,10 +23,13 @@ Nếu bạn đang dùng hệ điều hành Windows, bạn **KHÔNG CẦN** cài 
 
 1. Truy cập vào mục **Releases** ở bên phải trang Github này (hoặc mục tải xuống do người phát triển cung cấp) để tải về máy file thực thi: `report_tool.exe`.
 2. Click đúp chuột vào file `report_tool.exe` để mở phần mềm.
-3. Làm theo 3 bước trên màn hình: 
-   - Chọn các file báo cáo Facebook (`.csv`).
+3. Làm theo các bước trên màn hình: 
+   - Chọn các file báo cáo Facebook (`.csv`). (Lưu ý: Bắt buộc chọn báo cáo cấp độ Chiến dịch/Nhóm có chứa cột `Ngày tạo`).
    - Chọn file báo cáo CRM (`.csv`).
+   - Chọn file báo cáo Content (`.csv` - Tùy chọn, dùng để lấy link content).
    - Chọn thư mục xuất file.
+   - Nhập các Tiền tố Mã CRM (cách nhau bởi dấu phẩy, mặc định `P, PH`).
+   - (Tùy chọn) Kích hoạt bộ lọc Ngày để phân tách Content Mới / Ads Cũ.
 4. Bấm **"XỬ LÝ & XUẤT BÁO CÁO"** và nhận kết quả là file Excel chỉ sau vài giây.
 
 *(Nếu muốn chạy bằng mã nguồn Python, bạn có thể tham khảo cách của Linux/macOS bên dưới).*
@@ -96,8 +101,8 @@ Nếu bạn muốn chỉnh sửa mã nguồn và đóng gói lại thành file `
 # Cài đặt công cụ đóng gói
 pip install pyinstaller
 
-# Đóng gói ra file .exe (Có kèm Icon)
-pyinstaller --onefile --noconsole --icon=icon.ico report_tool.py
+# Lưu ý: Babel có thể cần import ẩn để DateEntry của tkcalendar hoạt động
+pyinstaller --onefile --noconsole --icon=icon.ico --hidden-import babel.numbers report_tool.py
 ```
 File `.exe` mới sẽ được tự động tạo ra và nằm bên trong thư mục `dist/`.
 

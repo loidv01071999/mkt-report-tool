@@ -10,6 +10,7 @@ dist/
 
 # Test output and data files (keep your CRM/FB data private)
 *.csv
+!samples/*.csv
 *.xlsx
 
 # Logs

@@ -51,9 +51,11 @@ def process_reports(bcfb_files, crm_file, content_file, output_dir, start_date="
             
         bcfb_full = pd.concat(bcfb_dfs, ignore_index=True)
         
-        # Clean numeric columns
-        bcfb_full['Kết quả'] = pd.to_numeric(bcfb_full['Kết quả'], errors='coerce').fillna(0)
-        bcfb_full['Số tiền đã chi tiêu (VND)'] = pd.to_numeric(bcfb_full['Số tiền đã chi tiêu (VND)'], errors='coerce').fillna(0)
+        # Clean numeric columns - sử dụng Regex để giữ lại số và dấu trừ
+        for col in ['Kết quả', 'Số tiền đã chi tiêu (VND)']:
+            if bcfb_full[col].dtype.name in ['object', 'str', 'string']:
+                bcfb_full[col] = bcfb_full[col].astype(str).str.replace(r'[^\d-]', '', regex=True)
+            bcfb_full[col] = pd.to_numeric(bcfb_full[col], errors='coerce').fillna(0)
         
         # Lọc bỏ các record có Số tiền đã chi tiêu (VND) = 0
         bcfb_full = bcfb_full[bcfb_full['Số tiền đã chi tiêu (VND)'] != 0]
@@ -82,7 +84,11 @@ def process_reports(bcfb_files, crm_file, content_file, output_dir, start_date="
         if missing_crm_cols:
             raise ValueError(f"File CRM thiếu các cột: {', '.join(missing_crm_cols)}")
             
-        crm_df['Số contact'] = pd.to_numeric(crm_df['Số contact'], errors='coerce').fillna(0)
+        for col in ['Số contact', 'Số đơn', 'DT khởi tạo']:
+            if col in crm_df.columns:
+                if crm_df[col].dtype.name in ['object', 'str', 'string']:
+                    crm_df[col] = crm_df[col].astype(str).str.replace(r'[^\d-]', '', regex=True)
+                crm_df[col] = pd.to_numeric(crm_df[col], errors='coerce').fillna(0)
         
         # Đọc file Content (nếu có)
         content_dict = {}
@@ -91,14 +97,19 @@ def process_reports(bcfb_files, crm_file, content_file, output_dir, start_date="
                 try:
                     content_df = pd.read_csv(content_file, encoding='utf-8')
                 except UnicodeDecodeError:
-                    content_df = pd.read_csv(content_file, encoding='utf-16')
+                    content_df = pd.read_csv(content_file, encoding='utf-16', errors='replace')
+                except Exception:
+                    content_df = pd.read_csv(content_file, encoding='latin1')
                 
-                content_df.columns = content_df.columns.str.strip()
-                if 'MÃ CONTENT' in content_df.columns and 'LINK CONTENT' in content_df.columns:
+                # Bỏ qua kiểm tra tên cột do file csv có thể bị lỗi font chữ (VD: M CONTENT)
+                # Lấy trực tiếp cột 1 làm Mã Content, cột 2 làm Link Content
+                if len(content_df.columns) >= 2:
+                    col1, col2 = content_df.columns[0], content_df.columns[1]
                     for _, row in content_df.iterrows():
-                        ma_c = str(row['MÃ CONTENT']).strip()
-                        link_c = str(row['LINK CONTENT']).strip()
-                        content_dict[ma_c] = link_c
+                        ma_c = str(row[col1]).strip()
+                        link_c = str(row[col2]).strip()
+                        if ma_c and ma_c.lower() != 'nan':
+                            content_dict[ma_c] = link_c if link_c.lower() != 'nan' else ""
             except Exception as e:
                 raise Exception(f"Lỗi khi đọc file Content: {str(e)}")
                 
@@ -198,29 +209,39 @@ def process_reports(bcfb_files, crm_file, content_file, output_dir, start_date="
             return name
 
         # 4. Các chiến dịch chưa được match trong BCFB
+        unmatched_grouped = {}
         for camp_row in unmatched_campaigns:
             clean_code = extract_crm_code(camp_row['Tên chiến dịch'])
+            if clean_code not in unmatched_grouped:
+                unmatched_grouped[clean_code] = []
+            unmatched_grouped[clean_code].append(camp_row)
+            
+        for clean_code, camps in unmatched_grouped.items():
+            sum_ket_qua = sum([c['Kết quả'] for c in camps])
+            sum_so_tien = sum([c['Số tiền đã chi tiêu (VND)'] for c in camps])
+            
             row_dict = {
                 "Mã": clean_code,
-                "Số contact": camp_row['Kết quả'],
+                "Số contact": sum_ket_qua,
                 "Số đơn": 0,
                 "DT khởi tạo": 0,
-                "Số tiền đã chi tiêu (VND)": camp_row['Số tiền đã chi tiêu (VND)'],
-                "Link content": ""
+                "Số tiền đã chi tiêu (VND)": sum_so_tien,
+                "Link content": content_dict.get(clean_code, "")
             }
             
             has_new_valid = False
             has_old = False
             
             if start_dt and end_dt:
-                c_date = camp_row['Ngày tạo']
-                c_name = str(camp_row['Tên chiến dịch'])
-                if pd.notnull(c_date):
-                    if c_date < start_dt:
-                        has_old = True
-                    elif start_dt <= c_date <= end_dt and "bản sao" not in c_name.lower():
-                        has_new_valid = True
-                        
+                for c in camps:
+                    c_date = c['Ngày tạo']
+                    c_name = str(c['Tên chiến dịch'])
+                    if pd.notnull(c_date):
+                        if c_date < start_dt:
+                            has_old = True
+                        elif start_dt <= c_date <= end_dt and "bản sao" not in c_name.lower():
+                            has_new_valid = True
+                            
             if has_new_valid and not has_old:
                 output_new.append(row_dict)
             elif has_new_valid and has_old:
@@ -275,7 +296,7 @@ class App(ctk.CTk):
         super().__init__()
 
         self.title("Tool Báo Cáo Marketing")
-        self.geometry("700x520")
+        self.geometry("700x650")
         
         self.bcfb_files = []
         self.crm_file = ""

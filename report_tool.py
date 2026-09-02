@@ -53,7 +53,7 @@ def process_reports(bcfb_files, crm_file, content_file, output_dir, start_date="
         
         # Clean numeric columns - sử dụng Regex để giữ lại số và dấu trừ
         for col in ['Kết quả', 'Số tiền đã chi tiêu (VND)']:
-            if bcfb_full[col].dtype == 'object':
+            if bcfb_full[col].dtype.name in ['object', 'str', 'string']:
                 bcfb_full[col] = bcfb_full[col].astype(str).str.replace(r'[^\d-]', '', regex=True)
             bcfb_full[col] = pd.to_numeric(bcfb_full[col], errors='coerce').fillna(0)
         
@@ -86,7 +86,7 @@ def process_reports(bcfb_files, crm_file, content_file, output_dir, start_date="
             
         for col in ['Số contact', 'Số đơn', 'DT khởi tạo']:
             if col in crm_df.columns:
-                if crm_df[col].dtype == 'object':
+                if crm_df[col].dtype.name in ['object', 'str', 'string']:
                     crm_df[col] = crm_df[col].astype(str).str.replace(r'[^\d-]', '', regex=True)
                 crm_df[col] = pd.to_numeric(crm_df[col], errors='coerce').fillna(0)
         
